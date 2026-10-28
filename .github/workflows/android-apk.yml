@@ -35,9 +35,14 @@ jobs:
         working-directory: app-source
         run: npm ci --no-audit --no-fund
 
+      
       - name: Install Capacitor tooling
         working-directory: app-source
-        run: npm install --no-save --no-package-lock @capacitor/core@latest @capacitor/android@latest @capacitor/cli@latest
+        run: |
+          npm install -g npm@10.9.4
+          npm cache clean --force
+          npm install --no-save --no-package-lock --legacy-peer-deps @capacitor/core@latest @capacitor/android@latest @capacitor/cli@latest
+
 
       - name: Build static client shell
         working-directory: app-source
