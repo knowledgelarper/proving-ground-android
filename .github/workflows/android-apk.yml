@@ -1,0 +1,83 @@
+name: Build Proving Ground APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract game source
+        run: |
+          set -eux
+          test -f grok-workspace-android-build.zip
+          mkdir -p app-source
+          unzip -oq grok-workspace-android-build.zip -d app-source
+          test -f app-source/package.json
+          test -f app-source/package-lock.json
+          test -f app-source/scripts/prepare-android-web.mjs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app-source/package-lock.json
+
+      - name: Install project dependencies
+        working-directory: app-source
+        run: npm ci --no-audit --no-fund
+
+      - name: Install Capacitor tooling
+        working-directory: app-source
+        run: npm install --no-save --no-package-lock @capacitor/core@latest @capacitor/android@latest @capacitor/cli@latest
+
+      - name: Build static client shell
+        working-directory: app-source
+        run: npm run build:android
+        env:
+          GROK_ANDROID_BUILD: "true"
+          VITE_AUTH_ENABLED: "false"
+
+      - name: Prepare mobile web bundle
+        working-directory: app-source
+        run: node scripts/prepare-android-web.mjs
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and build tools
+        run: sdkmanager --install "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+
+      - name: Generate native Android project
+        working-directory: app-source
+        run: npx cap add android
+
+      - name: Sync Android project
+        working-directory: app-source
+        run: npx cap sync android
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        working-directory: app-source/android
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: proving-ground-android-apk
+          path: app-source/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 14
